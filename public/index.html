@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FB Photo Downloader — auto-hébergé</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📷</text></svg>" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <h1>F B <span>Photo</span> Downloader</h1>
+      <p class="sub">Collez un lien public Facebook (photo, post ou album) — le serveur local
+      récupère les images en pleine résolution, sans connexion à un compte Facebook.</p>
+    </header>
+
+    <section class="search">
+      <div class="bar">
+        <input id="url" type="text" autocomplete="off" spellcheck="false"
+               placeholder="https://www.facebook.com/photo.php?fbid=…" />
+        <button id="go" class="btn primary" type="button">Récupérer</button>
+        <button id="clear" class="btn ghost" type="button" hidden>Effacer</button>
+      </div>
+      <div class="row-note">
+        <button id="paste" class="btn tiny" type="button">📋 Coller depuis le presse-papiers</button>
+        <span class="hint">Formats acceptés : photo, post (photos), album /media/set/</span>
+      </div>
+      <p id="status" class="status" hidden></p>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div class="results-head">
+        <h2 id="count-label"></h2>
+        <button id="download-all" class="btn primary small" type="button" hidden>Tout télécharger (ZIP)</button>
+      </div>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <footer class="foot">
+      <p>Projet auto-hébergé à but personnel et éducatif. Contenu public uniquement —
+      respectez les droits d'auteur de chaque image téléchargée.</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

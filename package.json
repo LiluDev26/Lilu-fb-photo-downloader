@@ -1,0 +1,17 @@
+{
+  "name": "fb-photo-downloader",
+  "version": "1.0.0",
+  "description": "Téléchargeur de photos Facebook auto-hébergé (posts publics + albums) — projet original",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "express": "^4.21.2"
+  }
+}
