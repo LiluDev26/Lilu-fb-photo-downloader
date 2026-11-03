@@ -595,6 +595,63 @@ app.get("/api/analyze", async (req, res) => {
   }
 });
 
+/** Route de diagnostic temporaire : voir la réponse Facebook selon le User-Agent. */
+app.get("/api/debug", async (req, res) => {
+  let target;
+  try {
+    target = parseFbTarget(String(req.query.url || "").trim());
+  } catch (e) {
+    return res.status(e.status || 400).json({ error: e.message });
+  }
+  const variants = {
+    crawler: UA_CRAWLER,
+    mobile: UA_MOBILE,
+    desktop:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    googlebot: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  };
+  const out = { requested: target.toString() };
+  for (const [name, ua] of Object.entries(variants)) {
+    const t0 = Date.now();
+    try {
+      const r = await fetch(target.toString(), {
+        redirect: "follow",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: {
+          "user-agent": ua,
+          accept: "text/html,application/xhtml+xml,*/*;q=0.8",
+          "accept-language": "fr-FR,fr;q=0.9,en;q=0.7",
+        },
+      });
+      const html = await r.text();
+      const norm = normalizeFbEncoding(html);
+      out[name] = {
+        status: r.status,
+        finalUrl: r.url,
+        ms: Date.now() - t0,
+        bytes: html.length,
+        setPcb: (norm.match(/set=pcb\.\d{6,20}/) || [null])[0],
+        storyId: extractStoryIdFromPage(html),
+        canonical:
+          (norm.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i) || [])[1] || null,
+        title: (norm.match(/<title[^>]*>([\s\S]{0,160}?)<\/title>/i) || [])[1] || null,
+        fbidCount: extractFbids(html, 50).length,
+        ogImageCount: extractOgImages(html).length,
+        markers: {
+          login: /\/login\/?\?|login_form|checkpoint/i.test(norm),
+          unavailable: /contenu (n'est pas|indisponible)|content isn't available|isn't available/i.test(norm),
+          pcb: /set=pcb\./.test(norm),
+        },
+        snippet: norm.slice(0, 300),
+      };
+    } catch (e) {
+      out[name] = { error: e.message, ms: Date.now() - t0 };
+    }
+  }
+  res.json(out);
+});
+
 /**
  * Téléchargement groupé : renvoie UN SEUL fichier ZIP (une seule demande
  * d'enregistrement au navigateur), photos en pleine résolution.
