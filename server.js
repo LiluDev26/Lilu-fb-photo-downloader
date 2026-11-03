@@ -61,8 +61,8 @@ function cleanUrl(raw) {
   return u;
 }
 
-/** GET HTML avec timeout et UA choisi. */
-async function fetchHtml(url, ua, referer) {
+/** GET HTML avec timeout et UA choisi ; renvoie aussi l'URL finale. */
+async function fetchPage(url, ua, referer) {
   const res = await fetch(url, {
     redirect: "follow",
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -78,7 +78,12 @@ async function fetchHtml(url, ua, referer) {
     err.status = res.status;
     throw err;
   }
-  return await res.text();
+  return { html: await res.text(), finalUrl: res.url, status: res.status };
+}
+
+/** GET HTML avec timeout et UA choisi. */
+async function fetchHtml(url, ua, referer) {
+  return (await fetchPage(url, ua, referer)).html;
 }
 
 /** Vérifie qu'une adresse média renvoie bien une image ; renvoie l'URL ou null. */
@@ -387,9 +392,48 @@ async function completePcbGallery(setId, baseItems, maxSteps = 20) {
   return items;
 }
 
+/**
+ * Résout un lien court `share/p/...` : depuis certaines IP (Render), Facebook
+ * redirige vers /login/?next=<permalien>. On extrait de ce paramètre l'auteur
+ * et l'id pfbid, puis on utilise la forme publique /<auteur>/posts/<pfbid>.
+ * En local, la redirection mène directement à la publication : on la réutilise.
+ */
+async function resolveShareTarget(url) {
+  try {
+    const page = await fetchPage(url, UA_CRAWLER);
+    const finalUrl = page.finalUrl || url;
+    let u;
+    try {
+      u = new URL(finalUrl);
+    } catch {
+      return null;
+    }
+    if (!u.pathname.startsWith("/login")) {
+      return finalUrl === url ? null : finalUrl;
+    }
+    const next = u.searchParams.get("next");
+    if (!next) return null;
+    const n = new URL(next, "https://www.facebook.com");
+    const story = n.searchParams.get("story_fbid");
+    const owner = n.searchParams.get("id");
+    if (story && owner && /^\d+$/.test(owner)) {
+      return `https://www.facebook.com/${owner}/posts/${story}`;
+    }
+    const groupM = n.pathname.match(/^\/groups\/([^/]+)\/posts\/([^/]+)/i);
+    if (groupM) return `https://www.facebook.com/groups/${groupM[1]}/posts/${groupM[2]}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Page d'un post : 2e tentative si la variante servie n'expose aucun id exploitable. */
 async function fetchPostPage(target) {
-  const url = "https://www.facebook.com" + pathOfUrl(target.toString());
+  let url = "https://www.facebook.com" + pathOfUrl(target.toString());
+  if (/\/share\//i.test(target.pathname)) {
+    const resolved = await resolveShareTarget(url);
+    if (resolved) url = resolved;
+  }
   let html = "";
   let lastErr = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -638,6 +682,11 @@ app.get("/api/debug", async (req, res) => {
         title: (norm.match(/<title[^>]*>([\s\S]{0,160}?)<\/title>/i) || [])[1] || null,
         fbidCount: extractFbids(html, 50).length,
         ogImageCount: extractOgImages(html).length,
+        albumItems: extractAlbumItems(html, 80).length,
+        prev: extractAdjacentMediaId(html, "prev"),
+        next: extractAdjacentMediaId(html, "next"),
+        prevMedia: /prevMedia/.test(norm),
+        nextMedia: /nextMedia/.test(norm),
         markers: {
           login: /\/login\/?\?|login_form|checkpoint/i.test(norm),
           unavailable: /contenu (n'est pas|indisponible)|content isn't available|isn't available/i.test(norm),
