@@ -857,7 +857,9 @@ app.get("/api/proxy", async (req, res) => {
   }
 });
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) =>
+  res.json({ ok: true, version: "2026-11-04-pagination" })
+);
 
 app.listen(PORT, () => {
   console.log(`FB Photo Downloader démarré → http://localhost:${PORT}`);
