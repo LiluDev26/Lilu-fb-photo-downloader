@@ -59,7 +59,7 @@ Render affiche ensuite l'URL publique du service.
 # doit renvoyer {"ok":true}
 Invoke-RestMethod https://<votre-url>.onrender.com/health
 
-# test complet : depuis Render, count=24 (viewer photo bloqué)
+# test complet : doit renvoyer count=30 (pagination GraphQL incluse)
 $fb = [uri]::EscapeDataString("https://www.facebook.com/share/p/1EpmWtAXs5/")
 Invoke-RestMethod "https://<votre-url>.onrender.com/api/analyze?url=$fb" |
   Select-Object kind, count
@@ -71,20 +71,15 @@ Invoke-WebRequest "https://<votre-url>.onrender.com/api/zip?url=$fb" -OutFile ph
 Ouvrez ensuite l'URL dans le navigateur, collez un lien et cliquez
 **« Tout télécharger (ZIP) »**.
 
-## 4. Galeries complètes (30/30) : tunnel Cloudflare
+## 4. Galeries complètes (30/30) : pagination intégrée
 
-Depuis l'IP de Render, Facebook redirige le viewer photo vers `/login` : les
-galeries `pcb` sont plafonnées à **24 photos**. Pour obtenir les 30, exposez le
-serveur depuis votre connexion personnelle :
+Render récupère d'abord les 24 photos exposées dans la page album, puis les
+suivantes via l'API GraphQL `CometAlbumPhotoCollagePaginationQuery`. Aucun PC
+n'est requis : l'URL Render est permanente et renvoie **30/30**.
 
-```powershell
-# double-cliquez plutôt sur start-public.bat
-powershell -ExecutionPolicy Bypass -File .\start-public.ps1
-```
-
-Le script démarre le serveur, télécharge `cloudflared` si besoin, crée le tunnel,
-copie l'URL `https://<random>.trycloudflare.com` dans le presse-papiers et l'ouvre.
-Laissez la fenêtre ouverte ; l'URL change à chaque redémarrage.
+Le tunnel Cloudflare (`start-public.bat`) reste disponible comme secours ou pour
+exposer l'instance locale ; il dépend de votre PC et son URL change à chaque
+redémarrage.
 
 ## 5. Mises à jour
 
@@ -101,8 +96,8 @@ git push
 | Symptôme | Cause / solution |
 |---|---|
 | Première visite lente (~1 min) | Le service gratuit était en veille ; c'est normal. |
-| 24 photos au lieu de 30 | Facebook bloque le viewer photo depuis l'IP de Render. Utilisez `start-public.bat` (tunnel domicile) pour les 30/30. |
-| `count=0`, page de connexion FB, erreur 502 | Facebook bloque l'IP du datacenter. Utilisez l'option Cloudflare Tunnel (voir README) depuis votre PC. |
+| Moins de photos que prévu | La pagination GraphQL a peut-être échoué (Facebook a changé son API). Vérifiez les logs Render ; en secours, `start-public.bat` (tunnel domicile). |
+| `count=0`, page de connexion FB, erreur 502 | Blocage temporaire de Facebook. Réessayez plus tard ; en secours, utilisez `start-public.bat` (tunnel domicile). |
 | Build échoue sur `npm ci` | Vérifiez que `package-lock.json` est bien poussé sur GitHub. |
 | ZIP vide ou incomplet | Facebook a limité certaines images ; réessayez plus tard ou vérifiez les logs Render. |
 

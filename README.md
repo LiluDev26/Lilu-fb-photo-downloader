@@ -17,7 +17,7 @@ Backend (Node/Express)
    ←  HTML/JSON contenant les identifiants médias (fbid / media_id)
    ↓  résolution de chaque image via le service crawler public de Facebook :
       lookaside.fbsbx.com/lookaside/crawler/media/?media_id=<id>
-   ↓  (post multi-photos) galerie media/set/?set=pcb.<story> + chaîne prevMedia
+   ↓  (post multi-photos) galerie media/set/?set=pcb.<story> + pagination GraphQL
 Front ← JSON {photos:[{id, thumb, full}]}
    ↓  affichage + téléchargement via /api/proxy (same-origin, nom de fichier propre)
 ```
@@ -25,7 +25,8 @@ Front ← JSON {photos:[{id, thumb, full}]}
 - Aucun login, aucun cookie de session : le contenu **privé** n'est pas accessible (volontaire).
 - Résolution : le service `lookaside/crawler` renvoie le fichier d'origine (souvent 1080–2048 px).
 - Post multi-photos : la page `media/set/?set=pcb.<id>` liste les 24 premières photos,
-  puis la chaîne `prevMedia` du viewer complète les photos restantes (30/30 vérifiées).
+  puis l'API GraphQL `CometAlbumPhotoCollagePaginationQuery` récupère les suivantes
+  (30/30 vérifiées, y compris depuis Render). La chaîne `prevMedia` reste un secours.
 - Certaines visites renvoient une variante de page sans `set=pcb` : l'id de story est alors
   récupéré dans l'URL canonique / `og:url`, ce qui rend l'extraction déterministe.
 - Cache mémoire 15 min par URL, album limité à 80 photos, concurrence 4.
@@ -77,7 +78,7 @@ node server.js
 
 Le bouton **« Tout télécharger (ZIP) »** envoie une seule requête à `/api/zip` :
 le serveur analyse le lien, récupère chaque photo en pleine résolution, puis renvoie
-**une seule archive ZIP** (`fb-photos-30-2026-11-03.zip`). Le navigateur n'ouvre donc
+**une seule archive ZIP** (`fb-photos-30-2026-11-04.zip`). Le navigateur n'ouvre donc
 qu'**une seule boîte de dialogue d'enregistrement**.
 
 - Format ZIP (universel) plutôt que RAR (création propriétaire, outils payants).
@@ -86,23 +87,28 @@ qu'**une seule boîte de dialogue d'enregistrement**.
 
 ## Mettre en ligne gratuitement
 
-### Option A — Render (recommandé, sans carte bancaire)
+### Option A — Render (recommandé, URL permanente, sans carte bancaire)
 
 1. Créez un dépôt GitHub avec ce dossier (`git init`, commit, push).
 2. Sur [render.com](https://render.com) → **New → Blueprint**, connectez le dépôt :
    le fichier `render.yaml` crée automatiquement le service gratuit.
    (Ou **New → Web Service** avec Build `npm ci` et Start `npm start`.)
-3. Render fournit une URL HTTPS du type `https://fb-photo-downloader.onrender.com`.
+3. Render fournit une URL HTTPS permanente du type `https://fb-photo-downloader.onrender.com`.
+
+Instance déjà déployée : <https://fb-photo-downloader.onrender.com>.
 
 Limites du plan gratuit Render : 512 Mo de RAM, mise en veille après 15 min sans
 trafic (réveil ~1 min), 5 Go de bande passante/mois. Aucune carte bancaire requise.
 
-> **Limite constatée (nov. 2026)** : depuis l'IP de Render, les liens `share` et les
-> albums publics fonctionnent, mais Facebook redirige le viewer photo vers `/login`.
-> Résultat : **24 photos sur 30** pour les galeries `pcb`. Le tunnel ci-dessous donne
-> les **30/30**.
+**Galeries complètes (30/30)** : la pagination GraphQL interne de Facebook
+(`CometAlbumPhotoCollagePaginationQuery`) récupère les photos au-delà des 24
+premières. Testé depuis l'IP de Render : **30 photos**, ZIP de **30 entrées**
+(~3 Mo). Aucun PC requis, accessible depuis un téléphone.
 
-### Option B — Tunnel Cloudflare depuis votre PC (30/30, galeries complètes)
+### Option B — Tunnel Cloudflare depuis votre PC (facultatif)
+
+Utile pour exposer l'instance locale (développement) ou comme secours si Facebook
+modifie son API. Pour un accès **permanent sans PC**, utilisez Render (option A).
 
 Double-cliquez **`start-public.bat`** (ou lancez `start-public.ps1`). Le script :
 
@@ -127,14 +133,15 @@ Pour une URL fixe, créez un tunnel nommé avec un domaine géré par Cloudflare
 Un `Dockerfile` est fourni : il fonctionne sur Render, SnapDeploy, Zeabur, Koyeb,
 Northflank, etc.
 
-> ⚠️ **Important** : Facebook peut refuser ou limiter les requêtes venant d'IP de
-> datacenter. Testez toujours l'URL déployée avec `/health` puis avec un vrai lien.
-> En cas de blocage, l'option B (tunnel domicile) est la plus fiable.
+> ⚠️ **Important** : Facebook peut refuser ou limiter certaines requêtes venant
+> d'IP de datacenter. La pagination GraphQL est justement conçue pour fonctionner
+> depuis Render. Si Facebook la bloque un jour, testez `/health` puis un vrai lien ;
+> en dernier recours, utilisez l'option B (tunnel domicile).
 
-| Méthode | URL stable | Galerie multi-photos |
-|---|---|---|
-| Render | oui | 24/30 (viewer bloqué) |
-| Tunnel Cloudflare | non (change au redémarrage) | **30/30** |
+| Méthode | URL stable | Galerie multi-photos | PC requis |
+|---|---|---|---|
+| **Render** | **oui** | **30/30** | **non** |
+| Tunnel Cloudflare | non (change au redémarrage) | 30/30 | oui |
 
 ## Limites connues
 
