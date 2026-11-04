@@ -78,7 +78,14 @@ async function fetchPage(url, ua, referer) {
     err.status = res.status;
     throw err;
   }
-  return { html: await res.text(), finalUrl: res.url, status: res.status };
+  const cookies =
+    typeof res.headers.getSetCookie === "function"
+      ? res.headers
+          .getSetCookie()
+          .map((c) => c.split(";")[0])
+          .join("; ")
+      : res.headers.get("set-cookie") || "";
+  return { html: await res.text(), finalUrl: res.url, status: res.status, cookies };
 }
 
 /** GET HTML avec timeout et UA choisi. */
@@ -393,6 +400,104 @@ async function completePcbGallery(setId, baseItems, maxSteps = 20) {
 }
 
 /**
+ * Complète une galerie `pcb` via l'API GraphQL interne de Facebook
+ * (`CometAlbumPhotoCollagePaginationQuery`, doc_id 29240820045553628).
+ * Contrairement au viewer `/photo/`, cette API répond aussi depuis une IP de
+ * datacenter : c'est elle qui permet à Render d'obtenir les 30/30.
+ * Renvoie `{ items, complete }` ; `complete=false` si Facebook a refusé.
+ */
+async function paginatePcbGallery(setId, page, baseItems) {
+  const items = [...baseItems];
+  const seen = new Set(items.map((i) => String(i.id)));
+  const norm = normalizeFbEncoding(page.html || "");
+
+  const lsd = (norm.match(/"LSD",\[\],\{"token":"([^"]+)"/) || [])[1] || null;
+  const nodeId =
+    (norm.match(/"id":"(bWVkaWFzZXQ6[^"]+)"/) || [])[1] ||
+    Buffer.from(`mediaset:pcb.${setId}`).toString("base64");
+  const pageInfo = norm.match(
+    /"page_info":\{"end_cursor":"([^"]+)","has_next_page":(true|false)\}/
+  );
+  let cursor = pageInfo ? pageInfo[1] : null;
+  let hasNext = pageInfo ? pageInfo[2] === "true" : false;
+
+  // La page expose déjà la fin de la galerie → rien à compléter.
+  if (!hasNext) return { items, complete: true };
+  if (!lsd || !cursor) return { items, complete: false };
+
+  const cookies = page.cookies || "";
+  const pageUrl = `https://www.facebook.com/media/set/?set=pcb.${setId}`;
+  const variables = {
+    count: 24,
+    cursor,
+    id: nodeId,
+    renderLocation: "permalink",
+    scale: 1,
+  };
+
+  for (let step = 0; step < 10 && hasNext && cursor; step++) {
+    let text;
+    try {
+      const res = await fetch("https://www.facebook.com/api/graphql/", {
+        method: "POST",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: {
+          "user-agent": UA_CRAWLER,
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "*/*",
+          "accept-language": "fr-FR,fr;q=0.9,en;q=0.7",
+          origin: "https://www.facebook.com",
+          referer: pageUrl,
+          "x-fb-friendly-name": "CometAlbumPhotoCollagePaginationQuery",
+          "x-requested-with": "XMLHttpRequest",
+          "x-fb-lsd": lsd,
+          ...(cookies ? { cookie: cookies } : {}),
+        },
+        body: new URLSearchParams({
+          av: "0",
+          __a: "1",
+          __req: "1",
+          dpr: "1",
+          __ccg: "UNKNOWN",
+          fb_api_caller_class: "RelayModern",
+          fb_api_req_friendly_name: "CometAlbumPhotoCollagePaginationQuery",
+          variables: JSON.stringify(variables),
+          doc_id: "29240820045553628",
+          server_timestamps: "true",
+        }),
+      });
+      if (!res.ok) return { items, complete: false };
+      text = normalizeFbEncoding(await res.text());
+    } catch {
+      return { items, complete: false };
+    }
+
+    const ids = [
+      ...new Set(
+        [...text.matchAll(/\/photo\/\?fbid=(\d{6,20})/g)]
+          .map((m) => m[1])
+          .filter((id) => !seen.has(id))
+      ),
+    ];
+    for (const id of ids) {
+      seen.add(id);
+      items.push({ id, h: null, w: null });
+    }
+
+    const next = [...text.matchAll(
+      /"page_info":\{"end_cursor":"([^"]+)","has_next_page":(true|false)\}/g
+    )].pop();
+    if (!next) return { items, complete: false };
+    cursor = next[1];
+    hasNext = next[2] === "true";
+    // Sécurité anti-boucle : page suivante mais aucun nouvel id.
+    if (!ids.length && hasNext) return { items, complete: false };
+  }
+
+  return { items, complete: !hasNext };
+}
+
+/**
  * Résout un lien court `share/p/...` : depuis certaines IP (Render), Facebook
  * redirige vers /login/?next=<permalien>. On extrait de ce paramètre l'auteur
  * et l'id pfbid, puis on utilise la forme publique /<auteur>/posts/<pfbid>.
@@ -462,15 +567,18 @@ async function analyzePost(target) {
   const setId = pcbM ? pcbM[1] : extractStoryIdFromPage(html);
   if (setId) {
     try {
-      const setHtml = await fetchHtml(
+      const setPage = await fetchPage(
         `https://www.facebook.com/media/set/?set=pcb.${setId}`,
         UA_CRAWLER
       );
       // Les items de cette page appartiennent par définition à la galerie :
       // pas de filtre d'époque ici (les photos peuvent être plus anciennes).
-      let items = extractAlbumItems(setHtml, ALBUM_MAX);
+      let items = extractAlbumItems(setPage.html, ALBUM_MAX);
       if (items.length) {
-        items = await completePcbGallery(setId, items);
+        const paginated = await paginatePcbGallery(setId, setPage, items);
+        items = paginated.items;
+        // Filet de sécurité (IP résidentielle) si l'API de pagination échoue.
+        if (!paginated.complete) items = await completePcbGallery(setId, items);
         const photos = await idsToPhotos(items, 4);
         if (photos.length) return dedupeById(sortByIdDesc(photos));
       }
@@ -495,23 +603,31 @@ async function analyzePost(target) {
 /** Analyse d'un album (/media/set/?set=a…) : toutes ses photos. */
 async function analyzeAlbum(target) {
   const targetPath = pathOfUrl(target.toString());
-  let html = "";
+  let page = null;
   for (const host of ["www.facebook.com", "m.facebook.com"]) {
     try {
-      html = await fetchHtml("https://" + host + targetPath, host === "m" ? UA_MOBILE : UA_CRAWLER);
-      if (extractFbids(html, 1).length) break;
+      const candidate = await fetchPage(
+        "https://" + host + targetPath,
+        host === "m" ? UA_MOBILE : UA_CRAWLER
+      );
+      page = candidate;
+      if (extractFbids(candidate.html, 1).length) break;
     } catch {
       /* host suivant */
     }
   }
-  if (!html) throw withUnavailable(new Error("album fetch failed"));
+  if (!page) throw withUnavailable(new Error("album fetch failed"));
+  const html = page.html;
 
   // Priorité : items structurés de l'album (media_id + dimensions)
   let items = extractAlbumItems(html, ALBUM_MAX);
-  // Galerie d'une publication (set=pcb) : compléter via la chaîne prevMedia
+  // Galerie d'une publication (set=pcb) : compléter via la pagination GraphQL
+  // (fonctionne aussi depuis Render), puis via la chaîne prevMedia en secours.
   const pcbM = targetPath.match(/set=pcb\.(\d{6,20})/);
   if (pcbM && items.length) {
-    items = await completePcbGallery(pcbM[1], items);
+    const paginated = await paginatePcbGallery(pcbM[1], page, items);
+    items = paginated.items;
+    if (!paginated.complete) items = await completePcbGallery(pcbM[1], items);
   }
   let source = "json";
   if (!items.length) {
