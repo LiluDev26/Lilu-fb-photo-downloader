@@ -433,6 +433,8 @@ async function paginatePcbGallery(setId, page, baseItems) {
     id: nodeId,
     renderLocation: "permalink",
     scale: 1,
+    // Variable exigée par la requête Relay (sans elle : missing_required_variable_value).
+    __relay_internal__pv__GHLShouldChangeSponsoredDataFieldNamerelayprovider: false,
   };
 
   for (let step = 0; step < 10 && hasNext && cursor; step++) {
@@ -922,6 +924,7 @@ app.get("/api/debug-pagination", async (req, res) => {
       id: nodeId,
       renderLocation: "permalink",
       scale: 1,
+      __relay_internal__pv__GHLShouldChangeSponsoredDataFieldNamerelayprovider: false,
     }),
     doc_id: "29240820045553628",
     server_timestamps: "true",
@@ -965,7 +968,7 @@ app.get("/api/debug-pagination", async (req, res) => {
 });
 
 app.get("/health", (_req, res) =>
-  res.json({ ok: true, version: "2026-11-04-debug" })
+  res.json({ ok: true, version: "2026-11-04-pagination2" })
 );
 
 app.listen(PORT, () => {
