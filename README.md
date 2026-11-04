@@ -97,21 +97,30 @@ qu'**une seule boîte de dialogue d'enregistrement**.
 Limites du plan gratuit Render : 512 Mo de RAM, mise en veille après 15 min sans
 trafic (réveil ~1 min), 5 Go de bande passante/mois. Aucune carte bancaire requise.
 
-### Option B — Cloudflare Tunnel (gratuit, depuis votre PC)
+> **Limite constatée (nov. 2026)** : depuis l'IP de Render, les liens `share` et les
+> albums publics fonctionnent, mais Facebook redirige le viewer photo vers `/login`.
+> Résultat : **24 photos sur 30** pour les galeries `pcb`. Le tunnel ci-dessous donne
+> les **30/30**.
 
-Si Facebook bloque les IP de datacenter (courant avec les hébergeurs gratuits),
-exposez le serveur depuis votre connexion personnelle :
+### Option B — Tunnel Cloudflare depuis votre PC (30/30, galeries complètes)
+
+Double-cliquez **`start-public.bat`** (ou lancez `start-public.ps1`). Le script :
+
+1. démarre le serveur local s'il ne tourne pas déjà ;
+2. télécharge `cloudflared` au premier lancement (aucun compte requis) ;
+3. crée un tunnel public et affiche une URL `https://<random>.trycloudflare.com`
+   (copiée dans le presse-papiers) puis ouvre le navigateur.
+
+Votre PC doit rester allumé et la fenêtre ouverte. L'URL change à chaque
+redémarrage du tunnel. Testé : **30/30 photos**, ZIP de **30 entrées** (~3 Mo).
 
 ```powershell
-# une seule fois : télécharger cloudflared
-winget install Cloudflare.cloudflared
-# puis, serveur démarré :
-cloudflared tunnel --url http://localhost:3812
+# équivalent manuel
+C:\Users\ASS\AppData\Local\Programs\cloudflared\cloudflared.exe tunnel --url http://localhost:3812
 ```
 
-Cloudflare affiche une URL publique `https://<random>.trycloudflare.com` (temporaire,
-sans compte). Votre PC doit rester allumé. Pour une URL fixe, créez un tunnel nommé
-avec un domaine géré par Cloudflare (gratuit).
+Pour une URL fixe, créez un tunnel nommé avec un domaine géré par Cloudflare
+(gratuit) — sinon, l'URL `trycloudflare.com` reste temporaire.
 
 ### Option C — Docker / autres plateformes
 
@@ -121,6 +130,11 @@ Northflank, etc.
 > ⚠️ **Important** : Facebook peut refuser ou limiter les requêtes venant d'IP de
 > datacenter. Testez toujours l'URL déployée avec `/health` puis avec un vrai lien.
 > En cas de blocage, l'option B (tunnel domicile) est la plus fiable.
+
+| Méthode | URL stable | Galerie multi-photos |
+|---|---|---|
+| Render | oui | 24/30 (viewer bloqué) |
+| Tunnel Cloudflare | non (change au redémarrage) | **30/30** |
 
 ## Limites connues
 

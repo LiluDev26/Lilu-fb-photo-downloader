@@ -59,7 +59,7 @@ Render affiche ensuite l'URL publique du service.
 # doit renvoyer {"ok":true}
 Invoke-RestMethod https://<votre-url>.onrender.com/health
 
-# test complet : doit renvoyer count=30
+# test complet : depuis Render, count=24 (viewer photo bloqué)
 $fb = [uri]::EscapeDataString("https://www.facebook.com/share/p/1EpmWtAXs5/")
 Invoke-RestMethod "https://<votre-url>.onrender.com/api/analyze?url=$fb" |
   Select-Object kind, count
@@ -71,7 +71,22 @@ Invoke-WebRequest "https://<votre-url>.onrender.com/api/zip?url=$fb" -OutFile ph
 Ouvrez ensuite l'URL dans le navigateur, collez un lien et cliquez
 **« Tout télécharger (ZIP) »**.
 
-## 4. Mises à jour
+## 4. Galeries complètes (30/30) : tunnel Cloudflare
+
+Depuis l'IP de Render, Facebook redirige le viewer photo vers `/login` : les
+galeries `pcb` sont plafonnées à **24 photos**. Pour obtenir les 30, exposez le
+serveur depuis votre connexion personnelle :
+
+```powershell
+# double-cliquez plutôt sur start-public.bat
+powershell -ExecutionPolicy Bypass -File .\start-public.ps1
+```
+
+Le script démarre le serveur, télécharge `cloudflared` si besoin, crée le tunnel,
+copie l'URL `https://<random>.trycloudflare.com` dans le presse-papiers et l'ouvre.
+Laissez la fenêtre ouverte ; l'URL change à chaque redémarrage.
+
+## 5. Mises à jour
 
 Chaque `git push` sur `main` redéploie automatiquement (autoDeploy activé) :
 
@@ -86,6 +101,7 @@ git push
 | Symptôme | Cause / solution |
 |---|---|
 | Première visite lente (~1 min) | Le service gratuit était en veille ; c'est normal. |
+| 24 photos au lieu de 30 | Facebook bloque le viewer photo depuis l'IP de Render. Utilisez `start-public.bat` (tunnel domicile) pour les 30/30. |
 | `count=0`, page de connexion FB, erreur 502 | Facebook bloque l'IP du datacenter. Utilisez l'option Cloudflare Tunnel (voir README) depuis votre PC. |
 | Build échoue sur `npm ci` | Vérifiez que `package-lock.json` est bien poussé sur GitHub. |
 | ZIP vide ou incomplet | Facebook a limité certaines images ; réessayez plus tard ou vérifiez les logs Render. |
